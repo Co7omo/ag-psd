@@ -38,7 +38,9 @@ const MEASUREMENT_UNITS = [undefined, 'Inches', 'Centimeters', 'Points', 'Picas'
 const hex = '0123456789abcdef';
 
 function charToNibble(code: number) {
-	return code <= 57 ? code - 48 : code - 87;
+	if (code <= 57) return code - 48; // '0'-'9'
+	if (code >= 97) return code - 87; // 'a'-'f'
+	return code - 55; // 'A'-'F'
 }
 
 function byteAt(value: string, index: number) {
@@ -68,11 +70,13 @@ function readEncodedString(reader: PsdReader) {
 	}
 
 	if (notAscii) {
-		const decoder = new TextDecoder('gbk');
-		return decoder.decode(buffer)
-	} else {
-		return decodeString(buffer);
+		try {
+			const decoder = new TextDecoder('gbk');
+			return decoder.decode(buffer)
+		} catch { }
 	}
+
+	return decodeString(buffer);
 }
 
 function writeEncodedString(writer: PsdWriter, value: string) {
@@ -1397,7 +1401,7 @@ MOCK_HANDLERS && addHandler(
 	},
 );
 
-const FrmD = createEnum<'auto' | 'none' | 'dispose'>('FrmD', '', {
+const FrmD = createEnum<'auto' | 'none' | 'dispose'>('FrmD', 'auto', {
 	auto: 'Auto',
 	none: 'None',
 	dispose: 'Disp',

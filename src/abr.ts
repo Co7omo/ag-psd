@@ -481,7 +481,7 @@ function parseBrushShape(desc: BrushShapeDescriptor): BrushShape {
 				tipsType: tipsBrushShapeShapes[desc.dtipsType],
 				tipsLengthRatio: parsePercent(desc.dtipsLengthRatio),
 				tipsHardness: parsePercent(desc.dtipsHardness),
-				...(desc.dtipsGridSize && desc.dtipsErodibleTipHeightMap ? {
+				...((desc.dtipsGridSize && desc.dtipsErodibleTipHeightMap) ? {
 					tipsGridSize: desc.dtipsGridSize,
 					tipsErodibleTipHeightMap: parseHeightmap(desc.dtipsErodibleTipHeightMap),
 				} : {}),
@@ -494,7 +494,7 @@ function parseBrushShape(desc: BrushShapeDescriptor): BrushShape {
 			};
 		}
 		default:
-			console.log(require('util').inspect(desc, false, 99, true));
+			// console.log(require('util').inspect(desc, false, 99, true));
 			throw new Error(`Unknown brush classId: ${(desc as any)._classID}`);
 	}
 }
@@ -724,8 +724,6 @@ export function readAbr(buffer: ArrayBufferView, options: { logMissingFeatures?:
 							if ('SmdF' in to) b.toolOptions.smudgeFingerPainting = to.SmdF;
 							if ('SmdS' in to) b.toolOptions.smudgeSampleAllLayers = to.SmdS;
 							if ('Prs ' in to) b.toolOptions.strength = to['Prs '];
-							if ('SmdF' in to) b.toolOptions.smudgeFingerPainting = to.SmdF;
-							if ('SmdS' in to) b.toolOptions.smudgeSampleAllLayers = to.SmdS;
 						}
 
 						brushes.push(b);

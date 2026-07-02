@@ -1921,6 +1921,7 @@ export const BlnM = createEnum<BlendMode>('BlnM', 'normal', {
 	'linear height': 'linearHeight',
 	'height': 'Hght',
 	'subtraction': 'Sbtr', // 2nd version of subtract ?
+	'pass through': '????', // added for compilation to work, not used in actual files
 });
 
 export const BESl = createEnum<BevelStyle>('BESl', 'inner bevel', {
@@ -1981,7 +1982,7 @@ export const gradientInterpolationMethodType = createEnum<InterpolationMethod>('
 	// TODO: stripes
 });
 
-export const ClrS = createEnum<'rgb' | 'hsb' | 'lab'>('ClrS', 'rgb', {
+export const ClrS = createEnum<'rgb' | 'hsb' | 'lab' | 'hsl'>('ClrS', 'rgb', {
 	rgb: 'RGBC',
 	hsb: 'HSBl',
 	lab: 'LbCl',
@@ -2043,7 +2044,7 @@ export const strokeStyleLineAlignment = createEnum<LineAlignment>('strokeStyleLi
 	outside: 'strokeStyleAlignOutside',
 });
 
-export const BlrM = createEnum<'spin' | 'zoom'>('BlrM', 'ispinmage', {
+export const BlrM = createEnum<'spin' | 'zoom'>('BlrM', 'spin', {
 	spin: 'Spn ',
 	zoom: 'Zm  ',
 });
@@ -2178,7 +2179,7 @@ export const WndM = createEnum<'wind' | 'blast' | 'stagger'>('WndM', 'wind', {
 	stagger: 'Stgr',
 });
 
-export const Drct = createEnum<'left' | 'right'>('Drct', 'from the right', {
+export const Drct = createEnum<'left' | 'right'>('Drct', 'right', {
 	left: 'Left',
 	right: 'Rght',
 });
@@ -2206,7 +2207,7 @@ export const prjM = createEnum<'fisheye' | 'perspective' | 'auto' | 'full spheri
 	'full spherical': 'fusP',
 });
 
-export const presetKindType = createEnum<'custom' | 'default'>('presetKindType', 'presetKindCustom', {
+export const presetKindType = createEnum<'custom' | 'default'>('presetKindType', 'custom', {
 	custom: 'presetKindCustom',
 	default: 'presetKindDefault',
 });

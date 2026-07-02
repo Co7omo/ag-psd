@@ -250,7 +250,7 @@ export function serializeEngineData(data: any, condensed = false) {
 		const keys = Object.keys(value);
 
 		if (keys.indexOf('98') !== -1)
-			keys.unshift(...keys.splice(keys.indexOf('99'), 1));
+			keys.unshift(...keys.splice(keys.indexOf('98'), 1));
 
 		if (keys.indexOf('99') !== -1)
 			keys.unshift(...keys.splice(keys.indexOf('99'), 1));

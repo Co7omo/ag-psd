@@ -10,7 +10,7 @@ interface ChannelInfo {
 }
 
 export const supportedColorModes = [ColorMode.Bitmap, ColorMode.Grayscale, ColorMode.RGB, ColorMode.Indexed];
-const colorModes = ['bitmap', 'grayscale', 'indexed', 'RGB', 'CMYK', 'multichannel', 'duotone', 'lab'];
+const colorModes = ['bitmap', 'grayscale', 'indexed', 'RGB', 'CMYK', '', '', 'multichannel', 'duotone', 'lab'];
 
 function setupGrayscale(data: PixelData) {
 	const size = data.width * data.height * 4;
@@ -234,7 +234,9 @@ export function readPsd(reader: PsdReader, readOptions: ReadOptions = {}) {
 	Object.assign(reader, readOptions);
 	reader.large = version === 2;
 	reader.globalAlpha = false;
-	if (!reader.totalMemoryLimit) reader.totalMemoryLimit = 2 * 1024 * 1024 * 1024; // default 2GB memory limit
+	if (!('totalMemoryLimit' in reader)) { // setting totalMemoryLimit to undefined explicitly disables memory limit
+		reader.totalMemoryLimit = 2 * 1024 * 1024 * 1024; // default 2GB memory limit
+	}
 
 	// color mode data
 	readSection(reader, 1, left => {
@@ -287,7 +289,7 @@ export function readPsd(reader: PsdReader, readOptions: ReadOptions = {}) {
 
 	const { layersGroup, layerGroupsEnabledId, ...rest } = imageResources;
 
-	if (Object.keys(rest)) {
+	if (Object.keys(rest).length) {
 		psd.imageResources = rest;
 	}
 
@@ -408,6 +410,7 @@ function readLayerRecord(reader: PsdReader, psd: Psd, imageResources: InternalIm
 	layer.left = readInt32(reader);
 	layer.bottom = readInt32(reader);
 	layer.right = readInt32(reader);
+	if (!isValidBoxSize(layer, reader)) throw new Error('Invalid layer size');
 
 	const channelCount = readUint16(reader);
 	const channels: ChannelInfo[] = [];
@@ -461,6 +464,13 @@ function readLayerRecord(reader: PsdReader, psd: Psd, imageResources: InternalIm
 	return { layer, channels };
 }
 
+function isValidBoxSize(box: { top?: number; left?: number; bottom?: number; right?: number; }, reader: PsdReader) {
+	const width = (box.right || 0) - (box.left || 0);
+	const height = (box.bottom || 0) - (box.top || 0);
+	const maxSize = reader.large ? 300000 : 30000;
+	return width >= 0 && height >= 0 && width <= maxSize && height <= maxSize;
+}
+
 function readLayerMaskData(reader: PsdReader, layer: Layer) {
 	return readSection<LayerMaskData | undefined>(reader, 1, left => {
 		if (!left()) return undefined;
@@ -472,6 +482,8 @@ function readLayerMaskData(reader: PsdReader, layer: Layer) {
 		mask.left = readInt32(reader);
 		mask.bottom = readInt32(reader);
 		mask.right = readInt32(reader);
+		if (!isValidBoxSize(mask, reader)) throw new Error('Invalid mask size');
+
 		mask.defaultColor = readUint8(reader);
 
 		const flags = readUint8(reader);
@@ -493,6 +505,7 @@ function readLayerMaskData(reader: PsdReader, layer: Layer) {
 			realMask.left = readInt32(reader);
 			realMask.bottom = readInt32(reader);
 			realMask.right = readInt32(reader);
+			if (!isValidBoxSize(realMask, reader)) throw new Error('Invalid realMask size');
 		}
 
 		if (flags & LayerMaskFlags.MaskHasParametersAppliedToIt) {
@@ -668,8 +681,8 @@ function getDataFromLayer(layer: Layer, read: LayerDataType, throwForMissingFeat
 	if (!layer.rawData) return undefined;
 
 	const { colorMode, bitsPerChannel, channels, large } = layer.rawData;
-	const layerWidth = (layer.right || 0) - (layer.left || 0);
-	const layerHeight = (layer.bottom || 0) - (layer.top || 0);
+	const layerWidth = Math.max(0, (layer.right || 0) - (layer.left || 0));
+	const layerHeight = Math.max(0, (layer.bottom || 0) - (layer.top || 0));
 	const cmyk = colorMode === ColorMode.CMYK;
 
 	let imageData: PixelData | undefined;
@@ -702,9 +715,8 @@ function getDataFromLayer(layer: Layer, read: LayerDataType, throwForMissingFeat
 			const mask = id === ChannelID.UserMask ? layer.mask : layer.realMask;
 			if (!mask) throw new Error(`Missing layer ${id === ChannelID.UserMask ? 'mask' : 'real mask'} data`);
 
-			const maskWidth = (mask.right || 0) - (mask.left || 0);
-			const maskHeight = (mask.bottom || 0) - (mask.top || 0);
-			if (maskWidth < 0 || maskHeight < 0 || maskWidth > 30000 || maskHeight > 30000) throw new Error('Invalid mask size');
+			const maskWidth = Math.max(0, (mask.right || 0) - (mask.left || 0));
+			const maskHeight = Math.max(0, (mask.bottom || 0) - (mask.top || 0));
 
 			if (maskWidth && maskHeight) {
 				maskData = createImageDataBitDepth(maskWidth, maskHeight, bitsPerChannel, 4, memoryLimit);
@@ -1174,6 +1186,7 @@ export function readDataRLE(reader: PsdReader, pixelData: PixelData | undefined,
 	let lengths: Uint16Array | Uint32Array;
 
 	if (large) {
+		consumeMemory(reader, offsets.length * height * 4);
 		lengths = new Uint32Array(offsets.length * height);
 
 		for (let o = 0, li = 0; o < offsets.length; o++) {
@@ -1182,6 +1195,7 @@ export function readDataRLE(reader: PsdReader, pixelData: PixelData | undefined,
 			}
 		}
 	} else {
+		consumeMemory(reader, offsets.length * height * 2);
 		lengths = new Uint16Array(offsets.length * height);
 
 		for (let o = 0, li = 0; o < offsets.length; o++) {
@@ -1234,6 +1248,8 @@ export function readDataRLE(reader: PsdReader, pixelData: PixelData | undefined,
 			}
 		}
 	}
+
+	recoverMemory(reader, lengths.byteLength);
 }
 
 export function readSection<T>(
@@ -1357,7 +1373,9 @@ export function readPattern(reader: PsdReader): PatternInfo {
 	const channelsCount = readUint32(reader);
 	const width = right - left;
 	const height = bottom - top;
-	const data = new Uint8Array(width * height * 4);
+	const size = width * height * 4;
+	consumeMemory(reader, size);
+	const data = new Uint8Array(size);
 
 	for (let i = 3; i < data.byteLength; i += 4) {
 		data[i] = 255;
@@ -1423,6 +1441,8 @@ export function readPattern(reader: PsdReader): PatternInfo {
 				if (reader.throwForMissingFeatures) throw new Error('Invalid color pattern');
 			}
 		} else if (compressionMode === 1) {
+			consumeMemory(reader, w * h);
+
 			const pixelData: PixelData = { data, width, height };
 			const tempData: PixelData = { data: new Uint8Array(w * h), width: w, height: h };
 			const cdataReader = createReader(cdata.buffer, cdata.byteOffset, cdata.byteLength);
@@ -1442,6 +1462,8 @@ export function readPattern(reader: PsdReader): PatternInfo {
 				// TODO:
 				throw new Error('Indexed pattern color mode not implemented');
 			}
+
+			recoverMemory(reader, w * h);
 		} else {
 			throw new Error('Invalid pattern compression mode');
 		}
@@ -1466,5 +1488,18 @@ function copyChannelToRGBA(srcData: PixelData, dstData: PixelData, ox: number, o
 			const value = srcData.data[src];
 			dstData.data[dst + offset] = value;
 		}
+	}
+}
+
+function consumeMemory(reader: PsdReader, size: number) {
+	if (reader.totalMemoryLimit !== undefined) {
+		if (reader.totalMemoryLimit < size) throw new Error('Exceeded memory limit');
+		reader.totalMemoryLimit -= size;
+	}
+}
+
+function recoverMemory(reader: PsdReader, size: number) {
+	if (reader.totalMemoryLimit !== undefined) {
+		reader.totalMemoryLimit += size;
 	}
 }

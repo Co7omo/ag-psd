@@ -57,7 +57,7 @@ export function readAse(buffer: ArrayBufferView): Ase {
         const nameLength = readUint16(reader);
         const name = readUnicodeStringWithLength(reader, nameLength);
         const colorMode = readSignature(reader);
-        let color: any;
+        let color: AseColor['color'];
         switch (colorMode) {
           case 'RGB ':
             color = {
@@ -93,6 +93,7 @@ export function readAse(buffer: ArrayBufferView): Ase {
           default:
             throw new Error('Invalid color mode');
         }
+        if (!color.type) throw new Error('Invalid color type');
         group.colors.push({ name, color });
         break;
       }

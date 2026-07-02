@@ -24,7 +24,6 @@ interface DecodedComponent {
 interface Decoded {
   width: number;
   height: number;
-  comments: string[];
   exifBuffer: Uint8Array | undefined;
   jfif: any;
   adobe: any;
@@ -623,7 +622,6 @@ function parse(data: Uint8Array) {
   const self: Decoded = {
     width: 0,
     height: 0,
-    comments: [],
     adobe: undefined,
     components: [],
     exifBuffer: undefined,
@@ -731,11 +729,12 @@ function parse(data: Uint8Array) {
         const appData = readDataBlock();
 
         if (fileMarker === 0xFFFE) {
-          let comment = '';
-          for (let ii = 0; ii < appData.byteLength; ii++) {
-            comment += String.fromCharCode(appData[ii]);
-          }
-          self.comments.push(comment);
+          // ignore comments
+          // let comment = '';
+          // for (let ii = 0; ii < appData.byteLength; ii++) {
+          //   comment += String.fromCharCode(appData[ii]);
+          // }
+          // self.comments.push(comment);
         }
 
         if (fileMarker === 0xFFE0) {
@@ -1122,6 +1121,19 @@ export function decodeJpeg(encoded: Uint8Array, createImageData: (width: number,
           imageDataArray[j++] = Y;
           imageDataArray[j++] = Y;
           imageDataArray[j++] = 255;
+        }
+      }
+      break;
+    case 2:
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const Y = data[i++];
+          const A = data[i++];
+
+          imageDataArray[j++] = Y;
+          imageDataArray[j++] = Y;
+          imageDataArray[j++] = Y;
+          imageDataArray[j++] = A;
         }
       }
       break;

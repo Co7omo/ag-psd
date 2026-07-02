@@ -157,8 +157,16 @@ function getLargestLayerSize(layers: Layer[] = []): number {
 	let max = 0;
 
 	for (const layer of layers) {
-		if (layer.canvas || layer.imageData) {
-			const { width, height } = getLayerDimentions(layer);
+		const { width, height } = getLayerDimentions(layer);
+		max = Math.max(max, 2 * height + 2 * width * height);
+
+		if (layer.mask) {
+			const { width, height } = getLayerDimentions(layer.mask);
+			max = Math.max(max, 2 * height + 2 * width * height);
+		}
+
+		if (layer.realMask) {
+			const { width, height } = getLayerDimentions(layer.realMask);
 			max = Math.max(max, 2 * height + 2 * width * height);
 		}
 
@@ -472,7 +480,7 @@ function writeGlobalLayerMaskInfo(writer: PsdWriter, info: GlobalLayerMaskInfo |
 			writeUint16(writer, info.colorSpace2);
 			writeUint16(writer, info.colorSpace3);
 			writeUint16(writer, info.colorSpace4);
-			writeUint16(writer, info.opacity * 0xff);
+			writeUint16(writer, Math.round(info.opacity * 0xff));
 			writeUint8(writer, info.kind);
 			writeZeros(writer, 3);
 		}

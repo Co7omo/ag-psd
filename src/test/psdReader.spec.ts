@@ -4,7 +4,7 @@ import { expect } from 'chai';
 import { readPsdFromFile, importPSD, loadImagesFromDirectory, compareCanvases, saveCanvas, createReaderFromBuffer, compareBuffers, compareTwoFiles } from './common';
 import { Layer, ReadOptions, Psd } from '../psd';
 import { byteArrayToBase64, readPsd, writePsdBuffer } from '../index';
-import { readPsd as readPsdInternal } from '../psdReader';
+import { readPsd as readPsdInternal, readPattern, readDataRLE } from '../psdReader';
 import { decodeEngineData2 } from '../engineData2';
 import { imageDataToCanvas } from '../helpers';
 
@@ -499,6 +499,77 @@ describe('PsdReader', () => {
 			psd.children?.splice(0, 1);
 			fs.writeFileSync('output.txt', require('util').inspect(psd, false, 99, false), 'utf8');
 		}
+	});
+
+	describe('memory-safety against malicious files', () => {
+		it('rejects a pattern with huge dimensions instead of attempting a massive allocation', () => {
+			// crafted pattern block: width/height come straight from unvalidated uint32 bounds
+			// (bottom - top) / (right - left), which used to be used unchecked to size a
+			// `new Uint8Array(width * height * 4)` allocation.
+			const buf = Buffer.alloc(49);
+			let o = 0;
+			buf.writeUInt32BE(100, o); o += 4; // pattern block length (irrelevant to this check)
+			buf.writeUInt32BE(1, o); o += 4;   // version
+			buf.writeUInt32BE(3, o); o += 4;   // colorMode = RGB
+			buf.writeInt16BE(0, o); o += 2;    // x
+			buf.writeInt16BE(0, o); o += 2;    // y
+			buf.writeUInt32BE(0, o); o += 4;   // unicode name length = 0
+			buf.writeUInt8(0, o); o += 1;      // pascal string id length = 0
+			buf.writeUInt32BE(3, o); o += 4;   // VMAL version
+			buf.writeUInt32BE(0, o); o += 4;   // length (unused)
+			buf.writeUInt32BE(0, o); o += 4;          // top
+			buf.writeUInt32BE(0, o); o += 4;          // left
+			buf.writeUInt32BE(0xffffffff, o); o += 4; // bottom -> height ~4.29e9
+			buf.writeUInt32BE(0xffffffff, o); o += 4; // right -> width ~4.29e9
+			buf.writeUInt32BE(0, o); o += 4;   // channelsCount = 0
+
+			const reader = createReaderFromBuffer(buf);
+			reader.totalMemoryLimit = 2 * 1024 * 1024 * 1024; // same default readPsd uses
+
+			expect(() => readPattern(reader)).to.throw('Exceeded memory limit');
+		});
+
+		it('rejects a layer whose bounding box exceeds the document size limit', () => {
+			// left === right (width 0) but bottom - top is huge: used to skip the
+			// memory-limit-guarded image data allocation entirely while still driving an
+			// unbounded RLE row-length table allocation from the huge height.
+			const buf = Buffer.alloc(60);
+			let o = 0;
+			buf.write('8BPS', o, 'ascii'); o += 4;
+			buf.writeUInt16BE(1, o); o += 2; // version
+			o += 6; // reserved
+			buf.writeUInt16BE(3, o); o += 2;  // channels
+			buf.writeUInt32BE(10, o); o += 4; // height
+			buf.writeUInt32BE(10, o); o += 4; // width
+			buf.writeUInt16BE(8, o); o += 2;  // bitsPerChannel
+			buf.writeUInt16BE(3, o); o += 2;  // colorMode = RGB
+
+			buf.writeUInt32BE(0, o); o += 4; // color mode data section length
+			buf.writeUInt32BE(0, o); o += 4; // image resources section length
+
+			buf.writeUInt32BE(22, o); o += 4; // layer & mask info section length
+			buf.writeUInt32BE(18, o); o += 4; // layer info section length
+			buf.writeInt16BE(1, o); o += 2;   // layer count = 1
+
+			buf.writeInt32BE(0, o); o += 4;             // top
+			buf.writeInt32BE(100, o); o += 4;           // left
+			buf.writeInt32BE(2_000_000_000, o); o += 4; // bottom -> height 2,000,000,000
+			buf.writeInt32BE(100, o); o += 4;           // right -> width 0 (left === right)
+
+			const reader = createReaderFromBuffer(buf);
+
+			expect(() => readPsdInternal(reader, { throwForMissingFeatures: false })).to.throw('Invalid layer size');
+		});
+
+		it('rejects an RLE row-length table sized from an unvalidated dimension', () => {
+			// direct unit test for the readDataRLE guard, independent of the layer bounding
+			// box check above, since it protects other callers (e.g. composite image data) too.
+			const reader = createReaderFromBuffer(Buffer.alloc(16));
+			reader.totalMemoryLimit = 2 * 1024 * 1024 * 1024;
+
+			expect(() => readDataRLE(reader, undefined, 0, 2_000_000_000, 8, 4, [0], false))
+				.to.throw('Exceeded memory limit');
+		});
 	});
 });
 

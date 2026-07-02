@@ -1307,8 +1307,8 @@ addHandler(
 			throw new Error('Placed layer ID must be in a GUID format (example: 20953ddb-9391-11ec-b4f1-c15674f50bc4)');
 		}
 		writePascalString(writer, placed.id, 1);
-		writeInt32(writer, 1); // pageNumber
-		writeInt32(writer, 1); // totalPages
+		writeInt32(writer, placed.pageNumber || 1);
+		writeInt32(writer, placed.totalPages || 1);
 		writeInt32(writer, 16); // anitAliasPolicy
 		if (placedLayerTypes.indexOf(placed.type) === -1) throw new Error('Invalid placedLayer type');
 		writeInt32(writer, placedLayerTypes.indexOf(placed.type));
@@ -3774,8 +3774,8 @@ if (MOCK_HANDLERS) {
 		'GenI', // generative tech
 		target => (target as any)._GenI !== undefined,
 		(reader, target, left) => {
-			const desc = readVersionAndDescriptor(reader, true); // as GenIDescriptor;
-			console.log('GenI', require('util').inspect(desc, false, 99, true));
+			// const desc = readVersionAndDescriptor(reader, true); // as GenIDescriptor;
+			// console.log('GenI', require('util').inspect(desc, false, 99, true));
 			(target as any)._GenI = readBytes(reader, left());
 		},
 		(writer, target) => {
@@ -4221,8 +4221,8 @@ addHandler(
 		writeUint16(writer, 2); // version
 		writeLevelsChannel(writer, info.rgb || defaultChannel);
 		writeLevelsChannel(writer, info.red || defaultChannel);
-		writeLevelsChannel(writer, info.blue || defaultChannel);
 		writeLevelsChannel(writer, info.green || defaultChannel);
+		writeLevelsChannel(writer, info.blue || defaultChannel);
 		for (let i = 0; i < 59; i++) writeLevelsChannel(writer, defaultChannel);
 	},
 );
@@ -4618,7 +4618,7 @@ addHandler(
 	},
 );
 
-const colorLookupType = createEnum<'3dlut' | 'abstractProfile' | 'deviceLinkProfile'>('colorLookupType', '3DLUT', {
+const colorLookupType = createEnum<'3dlut' | 'abstractProfile' | 'deviceLinkProfile'>('colorLookupType', '3dlut', {
 	'3dlut': '3DLUT',
 	abstractProfile: 'abstractProfile',
 	deviceLinkProfile: 'deviceLinkProfile',

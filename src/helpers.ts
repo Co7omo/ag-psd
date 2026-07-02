@@ -60,8 +60,9 @@ export function revMap(map: Dict) {
 	return result;
 }
 
-export function createEnum<T>(prefix: string, def: string, map: Dict) {
+export function createEnum<T extends string>(prefix: string, def: T, map: { [K in T]: string; }) {
 	const rev = revMap(map);
+
 	const decode = (val: string): T => {
 		const value = val.split('.')[1];
 		if (value && !rev[value]) {
@@ -77,10 +78,12 @@ export function createEnum<T>(prefix: string, def: string, map: Dict) {
 		}
 		return (rev[value] as any) || def;
 	};
+
 	const encode = (val: T | undefined): string => {
-		if (val && !map[val as any]) throw new Error(`Invalid value for enum: '${val}'`);
-		return `${prefix}.${map[val as any] || map[def]}`;
+		if (val && !map[val]) throw new Error(`Invalid value for enum: '${val}'`);
+		return `${prefix}.${val ? map[val] : map[def]}`;
 	};
+
 	return { decode, encode };
 }
 

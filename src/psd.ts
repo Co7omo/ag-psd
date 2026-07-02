@@ -2,7 +2,7 @@ export type BlendMode = 'pass through' | 'normal' | 'dissolve' | 'darken' | 'mul
 	'color burn' | 'linear burn' | 'darker color' | 'lighten' | 'screen' | 'color dodge' |
 	'linear dodge' | 'lighter color' | 'overlay' | 'soft light' | 'hard light' |
 	'vivid light' | 'linear light' | 'pin light' | 'hard mix' | 'difference' | 'exclusion' |
-	'subtract' | 'divide' | 'hue' | 'saturation' | 'color' | 'luminosity';
+	'subtract' | 'divide' | 'hue' | 'saturation' | 'color' | 'luminosity' | 'linear height' | 'height' | 'subtraction';
 
 export const enum ColorMode {
 	Bitmap = 0,
@@ -10,6 +10,8 @@ export const enum ColorMode {
 	Indexed = 2,
 	RGB = 3,
 	CMYK = 4,
+	// 5
+	// 6
 	Multichannel = 7,
 	Duotone = 8,
 	Lab = 9,
@@ -183,7 +185,7 @@ export interface EffectNoiseGradient {
 	name: string;
 	type: 'noise';
 	roughness?: number;
-	colorModel?: 'rgb' | 'hsb' | 'lab';
+	colorModel?: 'rgb' | 'hsb' | 'lab' | 'hsl';
 	randomSeed?: number;
 	restrictColors?: boolean;
 	addTransparency?: boolean;

@@ -10,26 +10,36 @@ function charLengthInBytes(code: number): number {
 	}
 }
 
+// Reads a scalar value at index `i`, replacing unpaired surrogates with U+FFFD,
+// matching how TextEncoder converts a string to a sequence of Unicode scalar values.
+function codePointAt(value: string, i: number): { code: number; size: number } {
+	const code = value.charCodeAt(i);
+
+	// high surrogate
+	if (code >= 0xd800 && code <= 0xdbff && (i + 1) < value.length) {
+		const extra = value.charCodeAt(i + 1);
+
+		// low surrogate
+		if (extra >= 0xdc00 && extra <= 0xdfff) {
+			return { code: ((code & 0x3ff) << 10) + (extra & 0x3ff) + 0x10000, size: 2 };
+		}
+	}
+
+	// unpaired surrogate (lone high or lone low)
+	if (code >= 0xd800 && code <= 0xdfff) {
+		return { code: 0xfffd, size: 1 };
+	}
+
+	return { code, size: 1 };
+}
+
 export function stringLengthInBytes(value: string): number {
 	let result = 0;
 
-	for (let i = 0; i < value.length; i++) {
-		const code = value.charCodeAt(i);
-
-		// high surrogate
-		if (code >= 0xd800 && code <= 0xdbff) {
-			if ((i + 1) < value.length) {
-				const extra = value.charCodeAt(i + 1);
-
-				// low surrogate
-				if ((extra & 0xfc00) === 0xdc00) {
-					i++;
-					result += charLengthInBytes(((code & 0x3ff) << 10) + (extra & 0x3ff) + 0x10000);
-				}
-			}
-		} else {
-			result += charLengthInBytes(code);
-		}
+	for (let i = 0; i < value.length;) {
+		const { code, size } = codePointAt(value, i);
+		result += charLengthInBytes(code);
+		i += size;
 	}
 
 	return result;
@@ -63,24 +73,10 @@ function writeCharacter(buffer: Uint8Array | Buffer, offset: number, code: numbe
 }
 
 export function encodeStringTo(buffer: Uint8Array | Buffer, offset: number, value: string): number {
-	for (let i = 0; i < value.length; i++) {
-		const code = value.charCodeAt(i);
-
-		// high surrogate
-		if (code >= 0xd800 && code <= 0xdbff) {
-			if ((i + 1) < value.length) {
-				const extra = value.charCodeAt(i + 1);
-
-				// low surrogate
-				if ((extra & 0xfc00) === 0xdc00) {
-					i++;
-					const fullCode = ((code & 0x3ff) << 10) + (extra & 0x3ff) + 0x10000;
-					offset += writeCharacter(buffer, offset, fullCode);
-				}
-			}
-		} else {
-			offset += writeCharacter(buffer, offset, code);
-		}
+	for (let i = 0; i < value.length;) {
+		const { code, size } = codePointAt(value, i);
+		offset += writeCharacter(buffer, offset, code);
+		i += size;
 	}
 
 	return offset;
@@ -96,72 +92,86 @@ export function encodeString(value: string): Uint8Array {
 	return buffer;
 }
 
-function continuationByte(buffer: Uint8Array, index: number): number {
-	if (index >= buffer.length) {
-		throw Error('Invalid byte index');
-	}
-
-	const continuationByte = buffer[index];
-
-	if ((continuationByte & 0xC0) === 0x80) {
-		return continuationByte & 0x3F;
-	} else {
-		throw Error('Invalid continuation byte');
-	}
-}
-
+// UTF-8 decoder implementing the WHATWG Encoding Standard's non-fatal error handling,
+// so malformed byte sequences are replaced with U+FFFD instead of throwing, matching TextDecoder.
 export function decodeString(value: Uint8Array): string {
 	if (value.byteLength > 1000 && typeof TextDecoder !== 'undefined') {
 		return (new TextDecoder()).decode(value);
 	}
 
-	let result: string[] = [];
+	const result: string[] = [];
 
-	for (let i = 0; i < value.length;) {
-		const byte1 = value[i++];
-		let code: number;
-
-		if ((byte1 & 0x80) === 0) {
-			code = byte1;
-		} else if ((byte1 & 0xe0) === 0xc0) {
-			const byte2 = continuationByte(value, i++);
-			code = ((byte1 & 0x1f) << 6) | byte2;
-
-			if (code < 0x80) {
-				throw Error('Invalid continuation byte');
-			}
-		} else if ((byte1 & 0xf0) === 0xe0) {
-			const byte2 = continuationByte(value, i++);
-			const byte3 = continuationByte(value, i++);
-			code = ((byte1 & 0x0f) << 12) | (byte2 << 6) | byte3;
-
-			if (code < 0x0800) {
-				throw Error('Invalid continuation byte');
-			}
-
-			if (code >= 0xd800 && code <= 0xdfff) {
-				throw Error(`Lone surrogate U+${code.toString(16).toUpperCase()} is not a scalar value`);
-			}
-		} else if ((byte1 & 0xf8) === 0xf0) {
-			const byte2 = continuationByte(value, i++);
-			const byte3 = continuationByte(value, i++);
-			const byte4 = continuationByte(value, i++);
-			code = ((byte1 & 0x0f) << 0x12) | (byte2 << 0x0c) | (byte3 << 0x06) | byte4;
-
-			if (code < 0x010000 || code > 0x10ffff) {
-				throw Error('Invalid continuation byte');
-			}
-		} else {
-			throw Error('Invalid UTF-8 detected');
-		}
-
+	function pushCodePoint(code: number) {
 		if (code > 0xffff) {
 			code -= 0x10000;
-			result.push(String.fromCharCode(code >>> 10 & 0x3ff | 0xd800));
-			code = 0xdc00 | code & 0x3ff;
+			result.push(String.fromCharCode((code >>> 10 & 0x3ff) | 0xd800));
+			code = 0xdc00 | (code & 0x3ff);
 		}
 
 		result.push(String.fromCharCode(code));
+	}
+
+	let codePoint = 0;
+	let bytesSeen = 0;
+	let bytesNeeded = 0;
+	let lowerBoundary = 0x80;
+	let upperBoundary = 0xbf;
+
+	for (let i = 0; i < value.length; i++) {
+		const byte = value[i];
+
+		if (bytesNeeded === 0) {
+			if (byte <= 0x7f) {
+				pushCodePoint(byte);
+			} else if (byte >= 0xc2 && byte <= 0xdf) {
+				bytesNeeded = 1;
+				codePoint = byte & 0x1f;
+			} else if (byte >= 0xe0 && byte <= 0xef) {
+				if (byte === 0xe0) lowerBoundary = 0xa0;
+				if (byte === 0xed) upperBoundary = 0x9f;
+				bytesNeeded = 2;
+				codePoint = byte & 0x0f;
+			} else if (byte >= 0xf0 && byte <= 0xf4) {
+				if (byte === 0xf0) lowerBoundary = 0x90;
+				if (byte === 0xf4) upperBoundary = 0x8f;
+				bytesNeeded = 3;
+				codePoint = byte & 0x07;
+			} else {
+				// invalid leading byte
+				pushCodePoint(0xfffd);
+			}
+
+			continue;
+		}
+
+		if (byte < lowerBoundary || byte > upperBoundary) {
+			// invalid continuation byte: emit replacement and reprocess this byte as a new sequence start
+			codePoint = 0;
+			bytesNeeded = 0;
+			bytesSeen = 0;
+			lowerBoundary = 0x80;
+			upperBoundary = 0xbf;
+			pushCodePoint(0xfffd);
+			i--;
+			continue;
+		}
+
+		lowerBoundary = 0x80;
+		upperBoundary = 0xbf;
+		codePoint = (codePoint << 6) | (byte & 0x3f);
+		bytesSeen++;
+
+		if (bytesSeen !== bytesNeeded) continue;
+
+		pushCodePoint(codePoint);
+		codePoint = 0;
+		bytesNeeded = 0;
+		bytesSeen = 0;
+	}
+
+	// truncated sequence at end of input
+	if (bytesNeeded !== 0) {
+		pushCodePoint(0xfffd);
 	}
 
 	return result.join('');
