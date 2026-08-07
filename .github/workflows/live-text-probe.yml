@@ -1,0 +1,50 @@
+name: Photoshop live text probe
+
+on:
+  pull_request:
+    paths:
+      - "src/**"
+      - "scripts/generate-live-text-probe.js"
+      - "test/EngineData2.bin"
+      - ".github/workflows/live-text-probe.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compatibility:
+    strategy:
+      matrix:
+        node-version: [18, 24]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm rebuild canvas
+      - run: npm run build
+      - run: npm run test-single
+
+  generate-probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm rebuild canvas
+      - run: npm run build
+      - run: node scripts/generate-live-text-probe.js results/live-text-probe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: photoshop-live-text-probe
+          path: results/live-text-probe
+          retention-days: 14
